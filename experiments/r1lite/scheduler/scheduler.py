@@ -63,6 +63,9 @@ class Scheduler:
             if result is not None:
                 if self.binarize_gripper:
                     _binarize_gripper_inplace(result['action'], self.gripper_threshold)
+                print(f"DEBUG raw action values: {result['action']}")   # temporary
+                if obs is not None and "left_arm" in obs.get("state", {}):
+                    print(f"DEBUG current left_arm feedback: {obs['state']['left_arm']}")   # temporary
                 action = action_dict_to_robot_action(
                     result['action'],
                     timestamp=self.ros2_bridge.now(),
@@ -134,7 +137,6 @@ class Scheduler:
         # Send raw obs, receive raw action dict from server
         t_start = time.perf_counter()
         result = self.inference_engine.predict_action(obs)
-        print(f"DEBUG action keys: {list(result['action'].keys())}")   # temporary
         t_end = time.perf_counter()
 
         predict_ms = (t_end - t_start) * 1000.0
