@@ -69,7 +69,7 @@ dependencies = [
     "torchcodec==0.4.0",
     "vit-pytorch==1.9.1",
     # GalaxeaManipSim
-    "coacd==1.0.5",
+    # coacd==1.0.5
     "gymnasium==0.29.1",
     "gym==0.22.0",
     "mplib==0.2.1",
