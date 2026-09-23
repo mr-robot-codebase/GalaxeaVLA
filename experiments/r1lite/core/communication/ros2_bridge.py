@@ -21,6 +21,7 @@ from utils.message.message_convert import (
     array_to_joint_state
 )
 from utils.message.datatype import RobotAction
+from utils.message.h264_decoder import H264StreamDecoder
 
 class Ros2Bridge:
     def __init__(self, config, use_recv_time: bool = False, num_threads: int = None):
@@ -45,6 +46,7 @@ class Ros2Bridge:
         self.publishers = {}
         self.dof_of_arm = 6#cfg.data.shape_meta["state"][0]["raw_shape"] # left arm meta
         self.obs_buffer = {}
+        self._h264_decoders = {}
         
         # Create a callback group that allows concurrent callbacks.
         self.callback_group = ReentrantCallbackGroup()
@@ -67,9 +69,9 @@ class Ros2Bridge:
         for name, topic in self.topics_config.images.items():
             self.obs_buffer[name] = MessageQueue(maxlen=self.topics_config.camera_deque_length)
             self.subscribers[topic] = self.node.create_subscription(
-                self.topics_config.message_type["images"], 
-                topic, 
-                partial(self.image_callback, _stack=self.obs_buffer[name]), 
+                self.topics_config.message_type["images"],
+                topic,
+                partial(self.image_callback, _stack=self.obs_buffer[name], cam_name=name),
                 self.topics_config.qos["sub"],
                 callback_group=self.callback_group  # Use callback group.
             )
@@ -284,10 +286,23 @@ class Ros2Bridge:
                 "header_time": timestamp,
             }
     
-    def image_callback(self, msg: CompressedImage, _stack=None):
+    def image_callback(self, msg: CompressedImage, _stack=None, cam_name: str = None):
+        fmt = (msg.format or "").split(";")[0].strip().lower()
+        if fmt in ("h264", "h.264"):
+            decoder = self._h264_decoders.setdefault(cam_name, H264StreamDecoder())
+            data = decoder.decode(bytes(msg.data))
+        else:
+            data = compressed_image_to_rgb_array(msg.data)
+
+        if data is None:
+            # No complete frame yet (e.g. h264 stream hasn't produced a
+            # decoded frame from this chunk, or JPEG decode failed) —
+            # skip rather than push a bad entry into the buffer.
+            return
+
         data_dict = self._create_data_dict(
             timestamp=header_stamp_to_timestamp(msg.header.stamp),
-            data=compressed_image_to_rgb_array(msg.data))
+            data=data)
         _stack.append(data_dict)
 
     def state_callback(self, msg: JointState, _stack=None, state_name: str="None"):
