@@ -12,6 +12,7 @@ decoder per camera stream, not a stateless per-message call.
 from __future__ import annotations
 
 import logging
+import threading
 
 import av
 import numpy as np
@@ -24,27 +25,38 @@ class H264StreamDecoder:
 
     One instance must be kept per camera topic (each is an independent
     encoded stream with its own SPS/PPS state).
+
+    The ROS2 client subscribes under a ReentrantCallbackGroup on a
+    MultiThreadedExecutor, so the callback that drives decode() can be
+    invoked concurrently on multiple threads for the same camera if
+    messages queue up. libavcodec's decode context is not safe for
+    concurrent use, so all access is serialized behind a lock — without
+    it, concurrent decode() calls corrupt the shared codec state (seen as
+    cascading "non-existing PPS referenced" errors and, ultimately, a
+    segfault inside libavcodec).
     """
 
     def __init__(self):
         self._codec = av.CodecContext.create("h264", "r")
+        self._lock = threading.Lock()
 
     def decode(self, data: bytes) -> np.ndarray | None:
         """Feed one message's bytes in; return the latest decoded frame as
         an RGB [C,H,W] uint8 array, or None if no full frame completed yet
         (e.g. only SPS/PPS or a partial NAL was fed so far)."""
-        try:
-            packets = self._codec.parse(data)
-            frame = None
-            for packet in packets:
-                for f in self._codec.decode(packet):
-                    frame = f
-        except Exception:
-            # Broad catch: PyAV's ffmpeg-backed errors must never take down
-            # the ROS2 executor thread over one bad/partial chunk (e.g. a
-            # P-frame arriving before the stream's first keyframe).
-            logger.warning("H.264 decode error, dropping this chunk", exc_info=True)
-            return None
+        with self._lock:
+            try:
+                packets = self._codec.parse(data)
+                frame = None
+                for packet in packets:
+                    for f in self._codec.decode(packet):
+                        frame = f
+            except Exception:
+                # Broad catch: PyAV's ffmpeg-backed errors must never take down
+                # the ROS2 executor thread over one bad/partial chunk (e.g. a
+                # P-frame arriving before the stream's first keyframe).
+                logger.warning("H.264 decode error, dropping this chunk", exc_info=True)
+                return None
 
         if frame is None:
             return None
