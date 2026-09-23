@@ -16,11 +16,12 @@ port = 8080
 # WebSocket (requires a CUDA GPU meeting the repo's Inference requirements,
 # and running this client from the repo-root G05 .venv). When present, this
 # section takes priority over [websocket].
-# [local]
-# ckpt_path = "/path/to/checkpoints/g05-base/checkpoints/model_state_dict.pt"
-# device = "cuda"
-# action_steps = 16
-# overrides = ["eval_embodiment=galaxea_r1lite"]
+[local]
+ckpt_path = "/home/nvidia/GalaxeaVLA/checkpoints/g05-base/checkpoints/model_state_dict.pt"
+device = "cuda"
+action_steps = 16
+overrides = ["eval_embodiment=galaxea_r1lite"]
+
 
 [instruction]
 use_vlm = false
