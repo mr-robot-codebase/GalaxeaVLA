@@ -134,6 +134,7 @@ class Scheduler:
         # Send raw obs, receive raw action dict from server
         t_start = time.perf_counter()
         result = self.inference_engine.predict_action(obs)
+        print(f"DEBUG action keys: {list(result['action'].keys())}")   # temporary
         t_end = time.perf_counter()
 
         predict_ms = (t_end - t_start) * 1000.0
