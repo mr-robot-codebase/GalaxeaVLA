@@ -166,5 +166,18 @@ class PolicyInferencer:
             else set()
         )
         if absent:
+            # `absent` names groups in the AR head's raw ActionCodec vocabulary
+            # (e.g. "left_control"), but action_state_merger.backward() above
+            # has already remapped those into the embodiment's real part names
+            # per merge_spec (e.g. "left_arm" or "left_ee_pose"). Drop the
+            # actual post-remap keys here so a value the model did not
+            # confidently predict never survives into `action` under its new
+            # name — a downstream consumer popping `absent` by its raw names
+            # would silently no-op once the keys have been renamed.
+            merger = getattr(sub_processor, "action_state_merger", None)
+            merge_spec = getattr(merger, "merge_spec", None) or {}
+            for raw_key in absent:
+                for final_key in merge_spec.get(raw_key, [raw_key]):
+                    action.pop(final_key, None)
             action["_absent_keys"] = absent
         return action
