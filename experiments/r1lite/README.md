@@ -7,6 +7,8 @@ It is a pure client node: it collects raw observations via ROS2, sends them to t
 
 > Similar to `experiments/so100` and `experiments/droid` — all are deployment components that connect to `serve_policy.py`, targeting different robots.
 
+An optional local (in-process) inference mode is also available for onboard computers with a capable GPU (e.g. Jetson AGX Orin / Orin NX) — see [Local (single-process) inference](#local-single-process-inference) below. It skips the WebSocket hop entirely by loading the model in the same process as the ROS2 client.
+
 ## Architecture
 
 ```
@@ -229,6 +231,32 @@ Or use the launch script:
 
 ```bash
 bash experiments/r1lite/scripts/launch_client_8080.sh
+```
+
+### Local (single-process) inference
+
+Instead of a separate GPU server, the policy can be loaded in the same process as the ROS2 client, on the robot's own onboard computer — e.g. a Jetson AGX Orin / Orin NX with enough unified memory to clear the repo's Inference requirement (>8GB). This requires:
+
+- Running the client from the **repo-root G05 `.venv`** (`uv sync` at the repo root), not the lightweight client-only environment — `torch`, `flash-attn-4`, `flash-linear-attention`, and the `g05` package must all be importable.
+- A CUDA-enabled `torch` build for your platform (on Jetson this means JetPack-compatible wheels — verify with `python -c "import torch; print(torch.cuda.is_available())"` before relying on this mode; a silent CPU-only fallback will make inference unusably slow).
+
+Enable it by adding a `[local]` section to `config.toml` (see the commented example there):
+
+```toml
+[local]
+ckpt_path = "/path/to/checkpoints/g05-base/checkpoints/model_state_dict.pt"
+device = "cuda"
+action_steps = 16
+overrides = ["eval_embodiment=galaxea_r1lite"]
+```
+
+When `[local]` is present, `run.py` loads the model directly (reusing `scripts/serve_policy.py`'s `setup()` and `ChunkedPolicyWrapper`, so behavior matches the networked server path exactly) instead of connecting to `[websocket]`. No separate `serve_policy.py` process is needed:
+
+```bash
+source /opt/ros/humble/setup.bash
+source /path/to/g05-repo/.venv/bin/activate
+cd experiments/r1lite
+python run.py --config config.toml
 ```
 
 ### 4. Run Tests (no ROS2 or server required)

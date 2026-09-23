@@ -6,6 +6,11 @@ from core.inference.websocket_engine import WebSocketClientEngine
 
 
 def create_inference_engine(config: Dict[str, Any]) -> InferenceEngine:
+    if "local" in config:
+        from core.inference.local_engine import LocalInferenceEngine
+
+        logger.info("Creating local (in-process) inference engine")
+        return LocalInferenceEngine(config)
     logger.info("Creating WebSocket inference engine")
     return WebSocketClientEngine(config)
 
