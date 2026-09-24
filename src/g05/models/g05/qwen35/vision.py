@@ -10,6 +10,7 @@ Aligned with g05 interface: provides load_pretrained_weights(hf_config, tensors)
 
 import logging
 import math
+import os
 from typing import Optional
 
 import torch
@@ -22,19 +23,27 @@ from .modules import rotate_half
 _flash_attn_varlen = None
 _flash_attn_backend = None
 
-try:
-    from flash_attn.cute import flash_attn_varlen_func as _fa4_varlen
+# Escape hatch for GPU/kernel combinations where flash-attn is broken but
+# still importable (e.g. flash-attn-4's CUTE backend on some Blackwell
+# consumer cards) — attn_implementation=sdpa only controls the main
+# LLM/VLM backbone, not this module, so this needs its own override.
+# Set G05_VISION_ATTN_BACKEND=sdpa to force the SDPA fallback below.
+_VISION_ATTN_BACKEND_OVERRIDE = os.environ.get("G05_VISION_ATTN_BACKEND", "").strip().lower()
 
-    _flash_attn_varlen = _fa4_varlen
-    _flash_attn_backend = "fa4"
-except ImportError:
+if _VISION_ATTN_BACKEND_OVERRIDE != "sdpa":
     try:
-        from flash_attn import flash_attn_varlen_func as _fa2_varlen
+        from flash_attn.cute import flash_attn_varlen_func as _fa4_varlen
 
-        _flash_attn_varlen = _fa2_varlen
-        _flash_attn_backend = "fa2"
+        _flash_attn_varlen = _fa4_varlen
+        _flash_attn_backend = "fa4"
     except ImportError:
-        pass
+        try:
+            from flash_attn import flash_attn_varlen_func as _fa2_varlen
+
+            _flash_attn_varlen = _fa2_varlen
+            _flash_attn_backend = "fa2"
+        except ImportError:
+            pass
 
 _VISION_FLASH_ATTN_WARNED = False
 
