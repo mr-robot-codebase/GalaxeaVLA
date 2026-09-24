@@ -19,6 +19,22 @@ An optional local (in-process) inference mode is also available for onboard comp
   (receive action → smooth → publish)
 ```
 
+## Robot Bring-up
+
+Before starting this client — in either WebSocket or [local](#local-single-process-inference) mode — the robot's own hardware modules must be running. Start only these three via the Galaxea SDK CLI:
+
+```bash
+galaxea --sdk start hdas
+galaxea --sdk start moca
+galaxea --sdk start signal_camera
+```
+
+`hdas` publishes joint/gripper feedback (`/hdas/feedback_*`), `moca` is the motor controller that actually subscribes to `/motion_target/*` and moves the arm, and `signal_camera` publishes the camera topics.
+
+**Do not** start the SDK's bundled `R1LiteBody` feature package (`galaxea --sdk start --feature-pkg R1LiteBody ...`) or any teleoperation module (`combined_teleop`, `r1lite_teleoperation`, `r1litet_homogeneous_teleoperation`, `r1prot_homogeneous_teleoperation`, `vr_teleoperation`, `vr_teleoperation_whole_body`) alongside this client. Those publish to the same `/motion_target/*` topics this client uses, with no arbitration between publishers — whichever message arrives last wins, so a live teleop module will silently override every action this client (or the policy server) sends, with no error on either side. If the robot doesn't seem to respond to actions despite everything else working, check `ros2 topic info /motion_target/target_joint_state_arm_left --verbose` for extra publishers before assuming it's a model or code problem.
+
+Run `galaxea --sdk info` to see all available module names, and `galaxea --sdk stop` to stop everything.
+
 ## Environment Setup
 
 **r1lite runs inside Python 3.10 + ROS2.**
