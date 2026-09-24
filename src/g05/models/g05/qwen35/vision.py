@@ -8,9 +8,11 @@ Licensed under the Apache License, Version 2.0; see THIRD_PARTY_NOTICES.md.
 Aligned with g05 interface: provides load_pretrained_weights(hf_config, tensors).
 """
 
+import importlib.util
 import logging
 import math
 import os
+import sys
 from typing import Optional
 
 import torch
@@ -32,21 +34,46 @@ _flash_attn_backend = None
 #   G05_VISION_ATTN_BACKEND=sdpa   forces the plain SDPA fallback below.
 #   G05_VISION_ATTN_BACKEND=sm120  forces the community SM120-patched
 #     kernel (github.com/Dao-AILab/flash-attention PRs #2336/#2348/#2349/
-#     #2389/#2439/#2484, distributed via the `kernels` library as
-#     SecondNatureComputing/flash-attn-4-sm120). Requires `pip install
-#     kernels`. Not a dependency of this repo — opt-in only, since it's a
-#     third-party build, not an official flash-attn-4 release. Fails
-#     loudly (no fallback) if requested but unavailable, since a silent
-#     fallback to SDPA would be confusing after explicitly asking for this.
+#     #2389/#2439/#2484, cloned locally from
+#     https://huggingface.co/SecondNatureComputing/flash-attn-4-sm120 —
+#     the `kernels` library's Hub-hosted loading path 404s for this repo
+#     as of 2026-09, so it's loaded directly from a local clone instead).
+#     Requires G05_SM120_KERNEL_PATH to point at that clone's
+#     build/torch-cuda directory, and its deps (einops, tvm-ffi,
+#     nvidia-cutlass-dsl) installed. Not a dependency of this repo — opt-in
+#     only, since it's a third-party build, not an official flash-attn-4
+#     release. Fails loudly (no fallback) if requested but unavailable,
+#     since a silent fallback to SDPA would be confusing after explicitly
+#     asking for this.
 _VISION_ATTN_BACKEND_OVERRIDE = os.environ.get("G05_VISION_ATTN_BACKEND", "").strip().lower()
 
 if _VISION_ATTN_BACKEND_OVERRIDE == "sdpa":
     pass  # _flash_attn_varlen stays None -> SDPA fallback in _attend_spatial
 elif _VISION_ATTN_BACKEND_OVERRIDE == "sm120":
-    from kernels import get_kernel
+    _sm120_dir = os.environ.get("G05_SM120_KERNEL_PATH")
+    if not _sm120_dir or not os.path.isdir(_sm120_dir):
+        raise RuntimeError(
+            "G05_VISION_ATTN_BACKEND=sm120 requires G05_SM120_KERNEL_PATH to "
+            "point at a local clone's build/torch-cuda directory: "
+            "git clone https://huggingface.co/SecondNatureComputing/flash-attn-4-sm120 "
+            "then set G05_SM120_KERNEL_PATH=<clone>/build/torch-cuda"
+        )
+    # The directory is named "torch-cuda" (hyphen, not a valid Python
+    # identifier), so a plain `sys.path.insert` + `import torch-cuda`
+    # can't work. Load it directly via importlib instead, with
+    # submodule_search_locations set so the package's own internal
+    # relative imports (interface.py -> flash_fwd_sm120.py etc.) resolve
+    # correctly, same as if it had been pip-installed under a real name.
+    _sm120_spec = importlib.util.spec_from_file_location(
+        "g05_flash_attn_4_sm120",
+        os.path.join(_sm120_dir, "__init__.py"),
+        submodule_search_locations=[_sm120_dir],
+    )
+    _sm120_module = importlib.util.module_from_spec(_sm120_spec)
+    sys.modules[_sm120_spec.name] = _sm120_module
+    _sm120_spec.loader.exec_module(_sm120_module)
 
-    _sm120_kernel = get_kernel("SecondNatureComputing/flash-attn-4-sm120")
-    _flash_attn_varlen = _sm120_kernel.flash_attn_varlen_func
+    _flash_attn_varlen = _sm120_module.flash_attn_varlen_func
     _flash_attn_backend = "fa4"  # same call signature as official fa4 below
 else:
     try:

@@ -148,8 +148,13 @@ dev = [
 # Only needed on SM120 consumer Blackwell GPUs (RTX 50-series) where
 # flash-attn-4's official CUTE backend is broken (see vision.py's
 # G05_VISION_ATTN_BACKEND=sm120 option and Dao-AILab/flash-attention#2860).
+# Also requires a local clone of
+# https://huggingface.co/SecondNatureComputing/flash-attn-4-sm120 and
+# G05_SM120_KERNEL_PATH pointed at its build/torch-cuda directory —
+# not pip-installable, loaded directly via importlib (see vision.py).
 blackwell = [
-    "kernels",
+    "tvm-ffi",
+    "nvidia-cutlass-dsl",
 ]
 
 [project.urls]
