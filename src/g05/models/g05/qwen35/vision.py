@@ -24,13 +24,31 @@ _flash_attn_varlen = None
 _flash_attn_backend = None
 
 # Escape hatch for GPU/kernel combinations where flash-attn is broken but
-# still importable (e.g. flash-attn-4's CUTE backend on some Blackwell
-# consumer cards) — attn_implementation=sdpa only controls the main
-# LLM/VLM backbone, not this module, so this needs its own override.
-# Set G05_VISION_ATTN_BACKEND=sdpa to force the SDPA fallback below.
+# still importable (e.g. flash-attn-4's official CUTE backend hits an
+# "illegal memory access" / layout assertion on SM120 consumer Blackwell
+# cards — upstream: https://github.com/Dao-AILab/flash-attention/issues/2860,
+# not yet fixed officially). attn_implementation=sdpa only controls the
+# main LLM/VLM backbone, not this module, so this needs its own override.
+#   G05_VISION_ATTN_BACKEND=sdpa   forces the plain SDPA fallback below.
+#   G05_VISION_ATTN_BACKEND=sm120  forces the community SM120-patched
+#     kernel (github.com/Dao-AILab/flash-attention PRs #2336/#2348/#2349/
+#     #2389/#2439/#2484, distributed via the `kernels` library as
+#     SecondNatureComputing/flash-attn-4-sm120). Requires `pip install
+#     kernels`. Not a dependency of this repo — opt-in only, since it's a
+#     third-party build, not an official flash-attn-4 release. Fails
+#     loudly (no fallback) if requested but unavailable, since a silent
+#     fallback to SDPA would be confusing after explicitly asking for this.
 _VISION_ATTN_BACKEND_OVERRIDE = os.environ.get("G05_VISION_ATTN_BACKEND", "").strip().lower()
 
-if _VISION_ATTN_BACKEND_OVERRIDE != "sdpa":
+if _VISION_ATTN_BACKEND_OVERRIDE == "sdpa":
+    pass  # _flash_attn_varlen stays None -> SDPA fallback in _attend_spatial
+elif _VISION_ATTN_BACKEND_OVERRIDE == "sm120":
+    from kernels import get_kernel
+
+    _sm120_kernel = get_kernel("SecondNatureComputing/flash-attn-4-sm120")
+    _flash_attn_varlen = _sm120_kernel.flash_attn_varlen_func
+    _flash_attn_backend = "fa4"  # same call signature as official fa4 below
+else:
     try:
         from flash_attn.cute import flash_attn_varlen_func as _fa4_varlen
 
