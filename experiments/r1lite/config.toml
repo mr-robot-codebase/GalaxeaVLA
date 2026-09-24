@@ -19,7 +19,7 @@ port = 8080
 [local]
 ckpt_path = "/home/nvidia/GalaxeaVLA/checkpoints/g05-base/checkpoints/model_state_dict.pt"
 device = "cuda"
-action_steps = 16
+action_steps = 32
 overrides = ["eval_embodiment=galaxea_r1lite"]
 
 
